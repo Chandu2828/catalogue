@@ -35,6 +35,15 @@ pipeline {
                 }
             }
         }
+        stage('Build') {
+            steps {
+                script {
+                    sh """
+                        echo "Version: ${appVersion}"
+                    """
+                }
+            }
+        }
         stage('Test') {
             steps {
                 script {
