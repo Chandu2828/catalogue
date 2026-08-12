@@ -53,6 +53,15 @@ pipeline {
                 }
             }
         }
+        stage('Docker Build') {
+            steps {
+                script {
+                    sh """
+                        docker build -t catalogue:${appVersion} .
+                    """
+                }
+            }
+        }
         stage('Test') {
             steps {
                 script {
