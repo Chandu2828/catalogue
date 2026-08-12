@@ -5,7 +5,7 @@ pipeline {
         }
     }
     environment {
-        COURSE = "Jenkins"
+        def appVersion = "" // make the appVersion variable globally available
     }
     options {
         disableConcurrentBuilds() // to queue a build when there's already an executing build of the pipeline 
@@ -28,8 +28,10 @@ pipeline {
                 script {
                     def packageJson = readJSON file: 'package.json' // Read the package.json file 
                     // Extracts the version property 
+                    // def appVersion = packageJson.version // local variable
                     appVersion = packageJson.version 
                     echo "The application version is: ${appVersion}"
+                    // This is local variable and only be available in this stage
                 }
             }
         }
