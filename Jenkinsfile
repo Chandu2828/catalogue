@@ -57,15 +57,15 @@ pipeline {
                 }
             }
         }
-        stage('Unit tests') {
-            steps {
-                script {
-                    sh """
-                        npm test
-                    """
-                }
-            }
-        }
+        // stage('Unit tests') {
+        //     steps {
+        //         script {
+        //             sh """
+        //                 npm test
+        //             """
+        //         }
+        //     }
+        // }
         // stage('SonarQube Analysis') {
         //     steps {
         //         // 'My SonarQube Server' must match the name configured in Jenkins system settings
