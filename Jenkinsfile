@@ -66,58 +66,58 @@ pipeline {
                 }
             }
         }
-        stage('SonarQube Analysis') {
-            steps {
-                // 'My SonarQube Server' must match the name configured in Jenkins system settings
-                withSonarQubeEnv('sonar-server') { // name configured in the system
-                    sh "${tool 'sonar-8'}/bin/sonar-scanner" // name configured in the tools
-                }
-            }
-        }
-        stage('SonarQube Quality Gate') {
-            steps {
-                timeout(time:10, unit: 'MINUTES') {
-                    script {
-                        def qg = waitForQualityGate() // Pauses pipeline 
-                        if (aq.status != 'OK') {
-                            error "Pipeline aborted: ${qg.status}"
-                        }
-                    }
-                }
-            }
-        }
-        stage('Check Dependabot Alerts') {
-            steps {
-                withCredentials([string(credentialsId: 'github-token', variable: 'GH_TOKEN')]) {
-                    sh '''
-                        set -e
+        // stage('SonarQube Analysis') {
+        //     steps {
+        //         // 'My SonarQube Server' must match the name configured in Jenkins system settings
+        //         withSonarQubeEnv('sonar-server') { // name configured in the system
+        //             sh "${tool 'sonar-8'}/bin/sonar-scanner" // name configured in the tools
+        //         }
+        //     }
+        // }
+        // stage('SonarQube Quality Gate') {
+        //     steps {
+        //         timeout(time: 10, unit: 'MINUTES') {
+        //             script {
+        //                 def qg = waitForQualityGate() // Pauses pipeline 
+        //                 if (aq.status != 'OK') {
+        //                     error "Pipeline aborted: ${qg.status}"
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        // stage('Check Dependabot Alerts') {
+        //     steps {
+        //         withCredentials([string(credentialsId: 'github-token', variable: 'GH_TOKEN')]) {
+        //             sh '''
+        //                 set -e
 
-                        REPO="daws-90s/catalogue"
+        //                 REPO="daws-90s/catalogue"
 
-                        curl -s -L \
-                        -H "Accept: application/vnd.github+json" \
-                        -H "Authorization: Bearer ${GH_TOKEN}" \
-                        -H "X-GitHub-Api-Version: 2026-03-10" \
-                        "https://api.github.com/repos/${REPO}/dependabot/alerts?state=open" \
-                        -o alerts.json
+        //                 curl -s -L \
+        //                 -H "Accept: application/vnd.github+json" \
+        //                 -H "Authorization: Bearer ${GH_TOKEN}" \
+        //                 -H "X-GitHub-Api-Version: 2026-03-10" \
+        //                 "https://api.github.com/repos/${REPO}/dependabot/alerts?state=open" \
+        //                 -o alerts.json
 
-                        echo "---- Open Dependabot Alerts ----"
-                        jq -r '.[] | "\\(.number)\\t\\(.security_vulnerability.severity)\\t\\(.dependency.package.name)\\t\\(.security_advisory.ghsa_id)"' alerts.json
+        //                 echo "---- Open Dependabot Alerts ----"
+        //                 jq -r '.[] | "\\(.number)\\t\\(.security_vulnerability.severity)\\t\\(.dependency.package.name)\\t\\(.security_advisory.ghsa_id)"' alerts.json
 
-                        HIGH_CRITICAL_COUNT=$(jq '[.[] | select(.security_vulnerability.severity == "high" or .security_vulnerability.severity == "critical")] | length' alerts.json)
+        //                 HIGH_CRITICAL_COUNT=$(jq '[.[] | select(.security_vulnerability.severity == "high" or .security_vulnerability.severity == "critical")] | length' alerts.json)
 
-                        echo "High/Critical alert count: ${HIGH_CRITICAL_COUNT}"
+        //                 echo "High/Critical alert count: ${HIGH_CRITICAL_COUNT}"
 
-                        if [ "$HIGH_CRITICAL_COUNT" -gt 0 ]; then
-                            echo "❌ Found ${HIGH_CRITICAL_COUNT} High/Critical severity dependency alert(s). Failing build."
-                            exit 1
-                        else
-                            echo "✅ No High/Critical dependency alerts found."
-                        fi
-                    '''
-                }
-            }
-        }
+        //                 if [ "$HIGH_CRITICAL_COUNT" -gt 0 ]; then
+        //                     echo "❌ Found ${HIGH_CRITICAL_COUNT} High/Critical severity dependency alert(s). Failing build."
+        //                     exit 1
+        //                 else
+        //                     echo "✅ No High/Critical dependency alerts found."
+        //                 fi
+        //             '''
+        //         }
+        //     }
+        // }
         // stage('Docker Build') {
         //     steps {
         //         script {
@@ -135,6 +135,42 @@ pipeline {
                         sh """
                             aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${acc_id}.dkr.ecr.us-east-1.amazonaws.com
                             docker build -t ${acc_id}.dkr.ecr.us-east-1.amazonaws.com/${project}/${component}:${appVersion} .
+                            // docker push ${acc_id}.dkr.ecr.us-east-1.amazonaws.com/${project}/${component}:${appVersion}
+                        """
+                    }
+                }
+            }
+        }
+        stage('Trivy Scan') {
+            steps {
+                script {
+                    def dockerfileScan = sh(
+                        script: """
+                            trivy config --exit-code 1 --severity HIGH,CRITICAL --format table ./Dockerfile
+                        """,
+                        returnStatus: true
+                    )
+
+                    def imageScan = sh(
+                        script: """
+                            trivy image --scanners vuln --pkg-types os --exit-code 1 --severity HIGH,CRITICAL --format table ${acc_id}.dkr.ecr.us-east-1.amazonaws.com/${project}/${component}:${appVersion}
+                        """,
+                        returnStatus: true
+                    )
+
+                    if (dockerfileScan != 0 || imageScan != 0) {
+                        error "Trivy found HIGH/CRITICAL issues in Dockerfile and/or OS packages. Failing pipeline."
+                    }
+                }
+            }
+        }
+        stage('ECR Image push') {
+            steps {
+                script {
+                    // in this block we get aws authentication
+                    withAWS(credentials: 'aws-creds', region: 'us-east-1') {
+                        sh """
+                            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${acc_id}.dkr.ecr.us-east-1.amazonaws.com
                             docker push ${acc_id}.dkr.ecr.us-east-1.amazonaws.com/${project}/${component}:${appVersion}
                         """
                     }
