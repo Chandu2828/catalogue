@@ -29,6 +29,7 @@ pipeline {
         stage('Read version'){
             steps {
                 script {
+                    // To execute this block you must install pipeline utility plugins
                     def packageJson = readJSON file: 'package.json' // Read the package.json file 
                     // Extracts the version property 
                     // def appVersion = packageJson.version // local variable
@@ -56,11 +57,32 @@ pipeline {
                 }
             }
         }
+        stage('Unit tests') {
+            steps {
+                script {
+                    sh """
+                        npm test
+                    """
+                }
+            }
+        }
         stage('SonarQube Analysis') {
             steps {
                 // 'My SonarQube Server' must match the name configured in Jenkins system settings
                 withSonarQubeEnv('sonar-server') { // name configured in the system
                     sh "${tool 'sonar-8'}/bin/sonar-scanner" // name configured in the tools
+                }
+            }
+        }
+        stage('SonarQube Quality Gate') {
+            steps {
+                timeout(time:10, unit: 'Minutes') {
+                    script {
+                        def qg = waitForQualityGate() // Pauses pipeline 
+                        if (aq.status != 'OK') {
+                            error "Pipeline aborted: ${qg.status}"
+                        }
+                    }
                 }
             }
         }
